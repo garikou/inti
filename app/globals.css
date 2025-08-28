@@ -1,0 +1,343 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --foreground-rgb: 34, 197, 94;
+  --background-start-rgb: 0, 0, 0;
+  --background-end-rgb: 10, 10, 10;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --foreground-rgb: 34, 197, 94;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 10, 10, 10;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  font-family: 'Inter', sans-serif;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+/* Custom cyberpunk styles */
+.glass {
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.glass-hover:hover {
+  background: rgba(0, 0, 0, 0.9);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 50%, #22c55e 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.neon-glow {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+}
+
+.neon-text {
+  text-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
+}
+
+.cyber-border {
+  border: 2px solid transparent;
+  background: linear-gradient(black, black) padding-box,
+              linear-gradient(135deg, #22c55e, #16a34a) border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  html {
+    color-scheme: dark;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Utility classes */
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass {
+  background: rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Gradient backgrounds */
+.gradient-bg {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.gradient-bg-alt {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+/* Text gradients */
+.text-gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Custom RainbowKit Button Styles */
+[data-testid="rk-connect-button"] {
+  background: transparent !important;
+  border: 2px solid #10b981 !important;
+  color: #10b981 !important;
+  border-radius: 12px !important;
+  padding: 12px 24px !important;
+  font-weight: 600 !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 48px !important;
+  width: 100% !important;
+  max-width: 280px !important;
+  margin: 0 auto !important;
+}
+
+[data-testid="rk-connect-button"]:hover {
+  background: #10b981 !important;
+  color: black !important;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.5) !important;
+}
+
+[data-testid="rk-connect-button"]:active {
+  transform: scale(0.98) !important;
+}
+
+/* Network selector button */
+[data-testid="rk-chain-button"] {
+  background: transparent !important;
+  border: none !important;
+  color: white !important;
+  border-radius: 8px !important;
+  padding: 8px 16px !important;
+  font-weight: normal !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+[data-testid="rk-chain-button"]:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: white !important;
+}
+
+/* Chain button text and elements */
+[data-testid="rk-chain-button"] span,
+[data-testid="rk-chain-button"] div,
+[data-testid="rk-chain-button"] * {
+  color: white !important;
+  fill: white !important;
+  stroke: white !important;
+}
+
+/* Hide chain button avatar */
+[data-testid="rk-chain-button"] img,
+[data-testid="rk-chain-button"] [data-testid="rk-chain-button__icon"],
+[data-testid="rk-chain-button"] div[style*="border-radius"] {
+  display: none !important;
+}
+
+/* Account button */
+[data-testid="rk-account-button"] {
+  background: transparent !important;
+  border: none !important;
+  color: white !important;
+  border-radius: 8px !important;
+  padding: 8px 16px !important;
+  font-weight: normal !important;
+  transition: all 0.2s ease !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Hide avatar in account button */
+[data-testid="rk-account-button"] img,
+[data-testid="rk-account-button"] [data-testid="rk-account-button__avatar"] {
+  display: none !important;
+}
+
+[data-testid="rk-account-button"]:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: white !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Account button text and chevron - more specific selectors */
+[data-testid="rk-account-button"] span,
+[data-testid="rk-account-button"] svg,
+[data-testid="rk-account-button"] div,
+[data-testid="rk-account-button"] * {
+  color: white !important;
+  fill: white !important;
+  stroke: white !important;
+  font-weight: normal !important;
+}
+
+/* Remove any borders from account button children */
+[data-testid="rk-account-button"] * {
+  border: none !important;
+  outline: none !important;
+}
+
+/* More aggressive avatar hiding */
+[data-testid="rk-account-button"] img,
+[data-testid="rk-account-button"] [data-testid="rk-account-button__avatar"],
+[data-testid="rk-account-button"] [data-testid="rk-account-button__avatar__img"],
+[data-testid="rk-account-button"] [data-testid="rk-account-button__avatar__container"],
+[data-testid="rk-account-button"] canvas,
+[data-testid="rk-account-button"] .rk-account-button__avatar,
+[data-testid="rk-account-button"] .rk-account-button__avatar__img,
+[data-testid="rk-account-button"] [data-testid="rk-account-button__avatar__container"] *,
+[data-testid="rk-account-button"] [data-testid="rk-account-button__avatar"] *,
+[data-testid="rk-account-button"] div[style*="border-radius"],
+[data-testid="rk-account-button"] div[style*="width"],
+[data-testid="rk-account-button"] div[style*="height"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  position: absolute !important;
+  left: -9999px !important;
+}
+
+/* Account button vertical centering and chevron styling */
+[data-testid="rk-account-button"] {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Match chevron style with chain selector */
+[data-testid="rk-account-button"] svg {
+  color: white !important;
+  fill: white !important;
+  stroke: white !important;
+  width: 16px !important;
+  margin-left: 8px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  vertical-align: middle !important;
+  position: relative !important;
+  top: 0 !important;
+  transform: translateY(0) !important;
+}

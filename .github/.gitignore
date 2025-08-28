@@ -1,0 +1,13 @@
+# GitHub Actions secrets and sensitive files
+*.secret
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
