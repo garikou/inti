@@ -280,7 +280,32 @@ export class SwapService {
           break
         case 'SUCCESS':
           formattedStatus = '✅ **Success**'
-          progress = 'Swap completed! Funds delivered to your destination address'
+          // Include detailed swap information if available
+          const statusAny = status as any
+          console.log('🔍 SUCCESS status details:', JSON.stringify(statusAny, null, 2))
+          
+          // Extract swap details from the swapDetails object
+          if (statusAny.swapDetails) {
+            const swapDetails = statusAny.swapDetails
+            const amountInFormatted = swapDetails.amountInFormatted || 'Unknown'
+            const amountOutFormatted = swapDetails.amountOutFormatted || 'Unknown'
+            
+            // Get transaction hash from destinationChainTxHashes
+            let txHash = 'Unknown'
+            if (swapDetails.destinationChainTxHashes && swapDetails.destinationChainTxHashes.length > 0) {
+              const txData = swapDetails.destinationChainTxHashes[0]
+              txHash = txData.hash || 'Unknown'
+            }
+            
+            progress = `Swap completed! Funds delivered to your destination address
+
+💰 **Swap Details:**
+• **Amount Sent:** ${amountInFormatted}
+• **Amount Received:** ${amountOutFormatted}
+• **Transaction Hash:** ${txHash}`
+          } else {
+            progress = 'Swap completed! Funds delivered to your destination address'
+          }
           break
         case 'INCOMPLETE_DEPOSIT':
           formattedStatus = '⚠️ **Incomplete Deposit**'

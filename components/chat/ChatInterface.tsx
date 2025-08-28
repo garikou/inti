@@ -17,6 +17,9 @@ interface Message {
   timestamp: Date
   swapData?: SwapQuote
   awaitingConfirmation?: boolean
+  awaitingDeposit?: boolean
+  depositAddress?: string
+  monitoring?: boolean
 }
 
 
@@ -33,6 +36,7 @@ export function ChatInterface() {
   ])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [statusMonitoring, setStatusMonitoring] = useState<{ [key: string]: NodeJS.Timeout }>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -42,6 +46,224 @@ export function ChatInterface() {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Cleanup status monitoring on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(statusMonitoring).forEach(interval => clearInterval(interval))
+    }
+  }, [statusMonitoring])
+
+  /**
+   * Handle button clicks from chat messages
+   */
+  const handleButtonClick = async (action: string, messageId: string) => {
+    const message = messages.find(m => m.id === messageId)
+    if (!message) return
+
+    switch (action) {
+      case 'confirm':
+        // Handle swap confirmation
+        await handleSwapConfirmation(message)
+        break
+      case 'cancel':
+        // Handle swap cancellation
+        setMessages(prev => prev.map(m => 
+          m.id === messageId 
+            ? { ...m, content: '❌ Swap cancelled by user.', awaitingConfirmation: false }
+            : { ...m, awaitingConfirmation: false }
+        ))
+        break
+      case 'sent':
+        // Handle "I sent funds" button
+        await handleFundsSent(message)
+        break
+      case 'submit_tx':
+        // Handle submit tx hash button
+        setInputValue('submit tx ')
+        break
+      case 'cancel_deposit':
+        // Handle deposit cancellation
+        await handleDepositCancellation(message)
+        break
+    }
+  }
+
+  /**
+   * Handle swap confirmation
+   */
+  const handleSwapConfirmation = async (message: Message) => {
+    if (!message.swapData) return
+
+    setIsLoading(true)
+    try {
+      const result = await swapService.executeSwap(message.swapData)
+      
+      // Create updated swap data with deposit address
+      const updatedSwapData = {
+        ...message.swapData,
+        depositAddress: result.depositAddress
+      }
+      
+      // Format deposit information with enhanced UI
+      const depositInfo = `✅ Swap quote confirmed!
+
+💰 **Swap Details:**
+• Swap **${message.swapData.fromAmount} ${message.swapData.fromToken}** → **${message.swapData.toAmount} ${message.swapData.toToken}**
+• From: ${(message.swapData as any).fromChain} → To: ${(message.swapData as any).toChain}
+• Slippage: ${message.swapData.slippage}%
+
+**Next Steps**:
+
+1. **Deposit funds**
+• Send **exactly** ${message.swapData.fromAmount} ${message.swapData.fromToken} to this address:
+• ${result.depositAddress}
+• Chain: ${message.swapData.depositChain || 'ethereum'}
+
+2. **After sending funds, confirm using the button below**
+• I will update the swap status in a few seconds
+
+3. **Funds should be in your wallet as soon as the status changes to "SUCCESS"**
+• If funds take more than a few minutes to show in your wallet, copy the transaction hash and submit it here.`
+
+      // Update the message with deposit information
+      setMessages(prev => prev.map(m => 
+        m.id === message.id 
+          ? {
+              ...m,
+              content: depositInfo,
+              swapData: updatedSwapData,
+              awaitingConfirmation: false,
+              awaitingDeposit: true,
+              depositAddress: result.depositAddress
+            }
+          : { ...m, awaitingConfirmation: false }
+      ))
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        type: 'bot',
+        content: `❌ Failed to execute swap: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
+        timestamp: new Date()
+      }])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  /**
+   * Handle "I sent funds" button - start status monitoring
+   */
+  const handleFundsSent = async (message: Message) => {
+    if (!message.depositAddress) return
+
+    // Update message to set monitoring flag (no text change)
+    setMessages(prev => prev.map(m => 
+      m.id === message.id 
+        ? {
+            ...m,
+            awaitingDeposit: false,
+            monitoring: true
+          }
+        : m
+    ))
+
+    // Start status monitoring
+    const interval = setInterval(async () => {
+      try {
+        const statusResult = await swapService.getExecutionStatus(message.depositAddress!)
+        
+        // Check if we've reached a definitive status
+        const definitiveStatuses = ['SUCCESS', 'INCOMPLETE_DEPOSIT', 'REFUNDED', 'FAILED', 'UNKNOWN']
+        if (definitiveStatuses.includes(statusResult.status)) {
+          // Stop monitoring
+          clearInterval(interval)
+          setStatusMonitoring(prev => {
+            const newState = { ...prev }
+            delete newState[message.id]
+            return newState
+          })
+
+          // Update message with final status and remove monitoring flag
+          let statusMessage = `${statusResult.formattedStatus}\n\n${statusResult.progress}`
+          
+          // For SUCCESS status, enhance the details with original swap information
+          if (statusResult.status === 'SUCCESS' && message.swapData && statusResult.progress) {
+            // Extract the progress part and enhance it with asset/chain information
+            const progressLines = statusResult.progress.split('\n')
+            const enhancedProgress = progressLines.map(line => {
+              if (line.includes('Amount Sent:')) {
+                return `• **Amount Sent:** ${line.split('Amount Sent:')[1].trim()} ${message.swapData!.fromToken} on ${(message.swapData as any).fromChain}`
+              } else if (line.includes('Amount Received:')) {
+                return `• **Amount Received:** ${line.split('Amount Received:')[1].trim()} ${message.swapData!.toToken} on ${(message.swapData as any).toChain}`
+              }
+              return line
+            }).join('\n')
+            
+            statusMessage = `${statusResult.formattedStatus}\n\n${enhancedProgress}`
+          }
+          
+          setMessages(prev => prev.map(m => 
+            m.id === message.id 
+              ? { ...m, content: statusMessage, monitoring: false }
+              : m
+          ))
+        } else {
+          // Update message with current status (replace any existing status updates)
+          setMessages(prev => prev.map(m => {
+            if (m.id === message.id) {
+              // Remove any existing status updates (lines starting with status indicators)
+              const baseContent = m.content.split('\n\n⏳')[0].split('\n\n✅')[0].split('\n\n❌')[0].split('\n\n🔄')[0]
+              const statusUpdate = `\n\n${statusResult.formattedStatus}\n${statusResult.progress}`
+              return { ...m, content: baseContent + statusUpdate }
+            }
+            return m
+          }))
+        }
+      } catch (error) {
+        console.error('Error monitoring status:', error)
+        // Stop monitoring on error
+        clearInterval(interval)
+        setStatusMonitoring(prev => {
+          const newState = { ...prev }
+          delete newState[message.id]
+          return newState
+        })
+        
+        // Update message to show error
+        setMessages(prev => prev.map(m => 
+          m.id === message.id 
+            ? { ...m, content: m.content + '\n\n❌ **Error monitoring status**\nPlease check the status manually or submit your transaction hash.', monitoring: false }
+            : m
+        ))
+      }
+    }, 5000) // Check every 5 seconds
+
+    // Store the interval for cleanup
+    setStatusMonitoring(prev => ({ ...prev, [message.id]: interval }))
+  }
+
+  /**
+   * Handle deposit cancellation
+   */
+  const handleDepositCancellation = async (message: Message) => {
+    // Stop any monitoring for this message
+    if (statusMonitoring[message.id]) {
+      clearInterval(statusMonitoring[message.id])
+      setStatusMonitoring(prev => {
+        const newState = { ...prev }
+        delete newState[message.id]
+        return newState
+      })
+    }
+
+    // Update message
+    setMessages(prev => prev.map(m => 
+      m.id === message.id 
+        ? { ...m, content: '❌ Swap cancelled by user.', awaitingDeposit: false, monitoring: false }
+        : m
+    ))
+  }
 
   /**
    * Handle incomplete swap intents by providing interactive guidance
@@ -136,67 +358,19 @@ export function ChatInterface() {
     const generateBotResponse = async (userInput: string, currentMessages: Message[]): Promise<Message> => {
     const lowerInput = userInput.toLowerCase()
 
-    // Check if this is a confirmation response to a pending swap
+    // Check if this is a confirmation response to a pending swap (legacy support)
     const pendingSwapMessage = currentMessages.find(m => m.awaitingConfirmation)
-    console.log('🔍 Found pending swap message:', pendingSwapMessage)
     if (pendingSwapMessage && pendingSwapMessage.swapData) {
-      console.log('🔍 Pending swap data:', pendingSwapMessage.swapData)
       const isAffirmative = /^(yes|y|confirm|proceed|go|ok|okay|sure|absolutely|definitely|let's do it|do it)$/i.test(userInput)
       const isNegative = /^(no|n|cancel|abort|stop|don't|dont|nevermind|never mind|not now|later)$/i.test(userInput)
       
-      if (isAffirmative) {
-        // Execute the swap
-        try {
-          const result = await swapService.executeSwap(pendingSwapMessage.swapData)
-          // Clear the awaiting confirmation flag
-          setMessages(prev => prev.map(m => ({ ...m, awaitingConfirmation: false })))
-          
-          // Format deposit information
-          const depositInfo = `✅ Swap quote confirmed!
-
-📋 **Deposit Information:**
-
-• **Address:** ${result.depositAddress}
-• **Asset:** ${pendingSwapMessage.swapData.fromToken}
-• **Chain:** ${pendingSwapMessage.swapData.depositChain || 'ethereum'}
-• **Amount:** ${pendingSwapMessage.swapData.fromAmount} ${pendingSwapMessage.swapData.fromToken}
-
-🚀 **Next Steps:**
-
-1. Send ${pendingSwapMessage.swapData.fromAmount} ${pendingSwapMessage.swapData.fromToken} to the deposit address above
-2. Copy the transaction hash from your wallet after sending
-3. Use the command "submit tx [YOUR_TX_HASH]" to complete the swap
-
-The swap will be processed once you submit your deposit transaction.`
-          
-          // Create updated swap data with deposit address
-          const updatedSwapData = {
-            ...pendingSwapMessage.swapData,
-            depositAddress: result.depositAddress
-          }
-          
-          return {
-            id: Date.now().toString(),
-            type: 'bot',
-            content: depositInfo,
-            timestamp: new Date(),
-            swapData: updatedSwapData
-          }
-        } catch (error) {
-          return {
-            id: Date.now().toString(),
-            type: 'bot',
-            content: `❌ Failed to execute swap: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
-            timestamp: new Date()
-          }
-        }
-      } else if (isNegative) {
-        // Clear the awaiting confirmation flag
+      if (isAffirmative || isNegative) {
+        // Clear the awaiting confirmation flag and let buttons handle the rest
         setMessages(prev => prev.map(m => ({ ...m, awaitingConfirmation: false })))
         return {
           id: Date.now().toString(),
           type: 'bot',
-          content: "❌ Swap cancelled. No worries! Let me know if you'd like to try a different swap or if there's anything else I can help you with.",
+          content: "Please use the buttons below to confirm or cancel the swap.",
           timestamp: new Date()
         }
       }
@@ -841,9 +1015,9 @@ ${assetIdTest}
 
         {/* Messages */}
         <div className="h-[460px] overflow-y-auto p-6 space-y-4">
-          {messages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
-          ))}
+                  {messages.map((message) => (
+          <ChatMessage key={message.id} message={message} onButtonClick={handleButtonClick} />
+        ))}
           
           {isLoading && (
             <div className="flex items-center space-x-2 text-neon-400">

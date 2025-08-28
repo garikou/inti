@@ -1,6 +1,6 @@
 'use client'
 
-import { SparklesIcon, UserIcon } from '@heroicons/react/24/outline'
+import { SparklesIcon, UserIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline'
 
 interface Message {
   id: string
@@ -8,21 +8,54 @@ interface Message {
   content: string
   timestamp: Date
   swapData?: any
+  awaitingConfirmation?: boolean
+  awaitingDeposit?: boolean
+  depositAddress?: string
+  monitoring?: boolean
 }
 
 interface ChatMessageProps {
   message: Message
+  onButtonClick?: (action: string, messageId: string) => void
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onButtonClick }: ChatMessageProps) {
   const isBot = message.type === 'bot'
   
-  // Function to format message content with markdown-style formatting
+  // Function to copy text to clipboard
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      // You could add a toast notification here
+    } catch (err) {
+      console.error('Failed to copy text: ', err)
+    }
+  }
+
+  // Function to format message content with markdown-style formatting and copy functionality
   const formatMessageContent = (content: string) => {
     // Replace **text** with bold styling and preserve line breaks
-    const formattedContent = content
+    let formattedContent = content
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    
+          // Add copy functionality for deposit addresses and transaction hashes
+      const addressMatch = content.match(/(0x[a-fA-F0-9]{40,})/g)
+      if (addressMatch) {
+        addressMatch.forEach(address => {
+          formattedContent = formattedContent.replace(
+            new RegExp(`(${address})`, 'g'),
+                         `<div class="flex items-center w-full min-w-0">
+               <span class="break-all font-mono text-sm">$1</span>
+               <button onclick="navigator.clipboard.writeText('${address}')" class="inline-flex items-center justify-center ml-2 text-neon-300 hover:text-neon-200 transition-colors align-middle group flex-shrink-0">
+                 <svg class="w-4 h-4 group-hover:fill-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                 </svg>
+               </button>
+             </div>`
+          )
+        })
+      }
     
     return (
       <span dangerouslySetInnerHTML={{ __html: formattedContent }} />
@@ -31,7 +64,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
   
   return (
     <div className={`flex ${isBot ? 'justify-start' : 'justify-end'}`}>
-      <div className={`flex items-start space-x-3 max-w-[80%] ${isBot ? 'flex-row' : 'flex-row-reverse space-x-reverse'}`}>
+      <div className={`flex items-start space-x-3 ${isBot ? 'max-w-[90%] sm:max-w-[85%]' : 'max-w-[85%]'} ${isBot ? 'flex-row' : 'flex-row-reverse space-x-reverse'}`}>
         {/* Avatar */}
         <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
           isBot 
@@ -58,11 +91,71 @@ export function ChatMessage({ message }: ChatMessageProps) {
               : '-right-2 border-l-8 border-l-neon-500 border-t-4 border-t-transparent border-b-4 border-b-transparent'
           }`}></div>
           
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+          <div className="whitespace-pre-wrap text-sm leading-relaxed break-words">
             {formatMessageContent(message.content)}
           </div>
           
-
+          {/* Interactive Buttons */}
+          {isBot && message.awaitingConfirmation && (
+            <div className="flex flex-col space-y-2 mt-4">
+              <button
+                onClick={() => onButtonClick?.('confirm', message.id)}
+                className="border border-neon-300 text-neon-300 hover:bg-neon-300 hover:text-black px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                ✅ Confirm Swap
+              </button>
+              <button
+                onClick={() => onButtonClick?.('cancel', message.id)}
+                className="border border-red-600 text-red-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                ❌ Cancel
+              </button>
+            </div>
+          )}
+          
+          {isBot && message.awaitingDeposit && (
+            <div className="flex flex-col space-y-2 mt-4">
+              <button
+                onClick={() => onButtonClick?.('sent', message.id)}
+                className="border border-neon-300 text-neon-300 hover:bg-neon-300 hover:text-black px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                💰 I sent {message.swapData?.fromAmount} {message.swapData?.fromToken}
+              </button>
+              <button
+                onClick={() => onButtonClick?.('submit_tx', message.id)}
+                className="border border-white text-white hover:bg-white hover:text-black px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                📝 Submit tx hash
+              </button>
+              <button
+                onClick={() => onButtonClick?.('cancel_deposit', message.id)}
+                className="border border-red-600 text-red-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                ❌ Cancel Swap
+              </button>
+            </div>
+          )}
+          
+          {/* Monitoring buttons - always show Cancel and Submit during monitoring */}
+          {isBot && message.monitoring && (
+            <div className="flex flex-col space-y-2 mt-4">
+              <div className="text-sm text-gray-500 mb-2">
+                🔄 Monitoring swap status<span className="animate-pulse">...</span>
+              </div>
+              <button
+                onClick={() => onButtonClick?.('submit_tx', message.id)}
+                className="border border-white text-white hover:bg-white hover:text-black px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                📝 Submit tx hash
+              </button>
+              <button
+                onClick={() => onButtonClick?.('cancel_deposit', message.id)}
+                className="border border-red-600 text-red-600 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                ❌ Cancel Swap
+              </button>
+            </div>
+          )}
           
           {/* Timestamp */}
           <div className={`text-xs mt-2 ${
