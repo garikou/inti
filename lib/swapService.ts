@@ -1,6 +1,8 @@
 import { OpenAPI, QuoteRequest, OneClickService } from '@defuse-protocol/one-click-sdk-typescript'
 import { supportedTokens } from './web3'
 import { priceService } from './priceService'
+import { tokenDiscoveryService, TokenInfo } from './tokenDiscoveryService'
+import { intentParser, ParsedSwapIntent } from './intentParser'
 
 export interface SwapQuote {
   id: string
@@ -57,28 +59,48 @@ export class SwapService {
    */
   async getQuote(request: SwapRequest): Promise<SwapQuote> {
     try {
-      const originAsset = this.getAssetId(request.fromToken)
-      const destinationAsset = this.getAssetId(request.toToken)
-      const originChain = this.getChainFromAssetId(originAsset)
-      const destinationChain = this.getChainFromAssetId(destinationAsset)
+      // Use enhanced token discovery if available
+      let originAsset: string
+      let destinationAsset: string
+      let originChain: string
+      let destinationChain: string
+
+      if ((request as any).fromChain && (request as any).toChain) {
+        // Use the new token discovery system
+        console.log(`🔍 Getting asset IDs for ${request.fromToken} on ${(request as any).fromChain} and ${request.toToken} on ${(request as any).toChain}`)
+        originAsset = await this.getAssetIdForTokenAndChain(request.fromToken, (request as any).fromChain)
+        destinationAsset = await this.getAssetIdForTokenAndChain(request.toToken, (request as any).toChain)
+        originChain = (request as any).fromChain
+        destinationChain = (request as any).toChain
+        console.log(`✅ Asset IDs: ${originAsset} → ${destinationAsset}`)
+      } else {
+        // Fall back to legacy system
+        originAsset = this.getAssetId(request.fromToken)
+        destinationAsset = this.getAssetId(request.toToken)
+        originChain = this.getChainFromAssetId(originAsset)
+        destinationChain = this.getChainFromAssetId(destinationAsset)
+      }
 
       // Use wallet address if provided, otherwise fall back to chain-specific addresses
       const walletAddress = request.walletAddress || this.getAddressForChain(originChain)
       const recipientAddress = request.walletAddress || this.getAddressForChain(destinationChain)
+      
+      console.log(`👛 Wallet addresses: refundTo=${walletAddress}, recipient=${recipientAddress}`)
+      console.log(`👛 Connected wallet: ${request.walletAddress || 'Not connected'}`)
 
       const quoteRequest: QuoteRequest = {
         dry: true, // Use dry: true for quotes to avoid generating transactions
-        depositMode: 'SIMPLE',
-        swapType: 'EXACT_INPUT',
+        depositMode: 'SIMPLE' as any,
+        swapType: 'EXACT_INPUT' as any,
         slippageTolerance: request.slippage || 100, // 1% default
         originAsset: originAsset,
-        depositType: 'ORIGIN_CHAIN',
+        depositType: 'ORIGIN_CHAIN' as any,
         destinationAsset: destinationAsset,
         amount: request.amount,
         refundTo: request.refundTo || walletAddress,
-        refundType: 'ORIGIN_CHAIN',
+        refundType: 'ORIGIN_CHAIN' as any,
         recipient: request.recipient || recipientAddress,
-        recipientType: 'DESTINATION_CHAIN',
+        recipientType: 'DESTINATION_CHAIN' as any,
         deadline: this.getDeadline()
       }
 
@@ -96,17 +118,27 @@ export class SwapService {
 
       console.log('📤 API Payload:', JSON.stringify(quoteRequest, null, 2))
 
-      const quote = await OneClickService.getQuote(quoteRequest)
-      
-      console.log('📥 API Response:', JSON.stringify(quote, null, 2))
+      let quote
+      try {
+        quote = await OneClickService.getQuote(quoteRequest)
+        console.log('📥 API Response:', JSON.stringify(quote, null, 2))
+      } catch (error: any) {
+        console.error('❌ API Error Details:', error)
+        if (error.response) {
+          console.error('❌ Error Response:', error.response.data)
+          console.error('❌ Error Status:', error.response.status)
+          console.error('❌ Error Headers:', error.response.headers)
+        }
+        throw error
+      }
 
-      return {
+      const swapQuote: SwapQuote = {
         id: Date.now().toString(),
         fromToken: request.fromToken,
         toToken: request.toToken,
         fromAmount: quote.quote?.amountInFormatted || request.amount,
         toAmount: quote.quote?.amountOutFormatted || '0',
-        minAmountOut: quote.quote?.minAmountOut ? (parseInt(quote.quote.minAmountOut) / Math.pow(10, 6)).toString() : undefined, // Convert from smallest unit to formatted
+        minAmountOut: quote.quote?.minAmountOut || undefined, // Keep in smallest unit for proper formatting later
         slippage: request.slippage || 1,
         gasEstimate: quote.quote?.timeEstimate?.toString() || '0',
         depositAddress: quote.quote?.depositAddress,
@@ -119,6 +151,16 @@ export class SwapService {
         amountOutUsd: quote.quote?.amountOutUsd,
         timeEstimate: quote.quote?.timeEstimate
       }
+
+      // Add chain information and wallet address for execution
+      const extendedQuote = {
+        ...swapQuote,
+        fromChain: (request as any).fromChain,
+        toChain: (request as any).toChain,
+        walletAddress: request.walletAddress
+      }
+
+      return extendedQuote
     } catch (error) {
       console.error('Error getting quote:', error)
       throw new Error(`Failed to get quote: ${error instanceof Error ? error.message : 'Unknown error'}`)
@@ -130,32 +172,65 @@ export class SwapService {
    */
   async executeSwap(quote: SwapQuote): Promise<{ status: string; depositAddress: string }> {
     try {
-      // Recreate the original request with dry: false to get deposit address
-      const originAsset = this.getAssetId(quote.fromToken)
-      const destinationAsset = this.getAssetId(quote.toToken)
-      const originChain = this.getChainFromAssetId(originAsset)
-      const destinationChain = this.getChainFromAssetId(destinationAsset)
+      console.log('🚀 Executing swap with quote:', {
+        fromToken: quote.fromToken,
+        toToken: quote.toToken,
+        fromAmount: quote.fromAmount,
+        fromChain: (quote as any).fromChain,
+        toChain: (quote as any).toChain,
+        walletAddress: (quote as any).walletAddress
+      })
 
-      // Use wallet address if available in the quote, otherwise fall back to chain-specific addresses
-      const walletAddress = (quote as any).walletAddress || this.getAddressForChain(originChain)
-      const recipientAddress = (quote as any).walletAddress || this.getAddressForChain(destinationChain)
+      // Get chain information from the quote
+      const fromChain = (quote as any).fromChain
+      const toChain = (quote as any).toChain
+      
+      if (!fromChain || !toChain) {
+        throw new Error('Chain information missing from quote. Cannot execute swap.')
+      }
 
-      // Convert amount to smallest unit (wei) for the API
-      const amountInSmallestUnit = this.convertToSmallestUnit(quote.fromAmount, quote.fromToken)
+      // Get dynamic asset IDs for the specific chains
+      const originAsset = await this.getAssetIdForTokenAndChain(quote.fromToken, fromChain)
+      const destinationAsset = await this.getAssetIdForTokenAndChain(quote.toToken, toChain)
+      
+      console.log(`🔍 Execution asset IDs: ${originAsset} → ${destinationAsset}`)
+
+      // Use connected wallet address for both refund and recipient
+      const walletAddress = (quote as any).walletAddress
+      if (!walletAddress) {
+        throw new Error('Wallet address not found. Please connect your wallet first.')
+      }
+
+      console.log(`👛 Using wallet address: ${walletAddress}`)
+
+      // Convert amount to smallest unit using the correct token decimals
+      const amountInSmallestUnit = await this.convertIntentToRequest({
+        fromToken: quote.fromToken,
+        toToken: quote.toToken,
+        fromChain: fromChain,
+        toChain: toChain,
+        amount: quote.fromAmount,
+        slippage: quote.slippage,
+        isComplete: true,
+        confidence: 'high',
+        missingInfo: []
+      } as ParsedSwapIntent).then(request => request.amount)
+      
+      console.log(`🔢 Execution amount: ${quote.fromAmount} → ${amountInSmallestUnit}`)
       
       const executionRequest: QuoteRequest = {
         dry: false, // Set to false to get deposit address
-        depositMode: 'SIMPLE',
-        swapType: 'EXACT_INPUT',
+        depositMode: 'SIMPLE' as any,
+        swapType: 'EXACT_INPUT' as any,
         slippageTolerance: quote.slippage * 100,
         originAsset: originAsset,
-        depositType: 'ORIGIN_CHAIN',
+        depositType: 'ORIGIN_CHAIN' as any,
         destinationAsset: destinationAsset,
         amount: amountInSmallestUnit,
         refundTo: walletAddress,
-        refundType: 'ORIGIN_CHAIN',
-        recipient: recipientAddress,
-        recipientType: 'DESTINATION_CHAIN',
+        refundType: 'ORIGIN_CHAIN' as any,
+        recipient: walletAddress,
+        recipientType: 'DESTINATION_CHAIN' as any,
         deadline: quote.deadline
       }
 
@@ -176,14 +251,59 @@ export class SwapService {
   }
 
   /**
-   * Get execution status
+   * Get execution status with enhanced formatting
    */
-  async getExecutionStatus(depositAddress: string): Promise<{ status: string; details?: any }> {
+  async getExecutionStatus(depositAddress: string): Promise<{ 
+    status: string; 
+    details?: any;
+    formattedStatus?: string;
+    progress?: string;
+  }> {
     try {
+      console.log(`🔍 Checking status for deposit address: ${depositAddress}`)
       const status = await OneClickService.getExecutionStatus(depositAddress)
+      
+      console.log('📥 Status API Response:', JSON.stringify(status, null, 2))
+      
+      const swapStatus = status.status || 'UNKNOWN'
+      let formattedStatus = ''
+      let progress = ''
+      
+      switch (swapStatus) {
+        case 'PENDING_DEPOSIT':
+          formattedStatus = '⏳ **Pending Deposit**'
+          progress = 'Waiting for funds to be sent to the deposit address'
+          break
+        case 'PROCESSING':
+          formattedStatus = '🔄 **Processing**'
+          progress = 'Deposit detected! Market makers are executing your swap'
+          break
+        case 'SUCCESS':
+          formattedStatus = '✅ **Success**'
+          progress = 'Swap completed! Funds delivered to your destination address'
+          break
+        case 'INCOMPLETE_DEPOSIT':
+          formattedStatus = '⚠️ **Incomplete Deposit**'
+          progress = 'Deposit received but amount is below the required minimum'
+          break
+        case 'REFUNDED':
+          formattedStatus = '💸 **Refunded**'
+          progress = 'Swap could not be completed. Funds have been refunded to your address'
+          break
+        case 'FAILED':
+          formattedStatus = '❌ **Failed**'
+          progress = 'Swap failed due to an error. Check the details below'
+          break
+        default:
+          formattedStatus = '❓ **Unknown Status**'
+          progress = 'Unable to determine swap status'
+      }
+      
       return {
-        status: status.status || 'pending',
-        details: status
+        status: swapStatus,
+        details: status,
+        formattedStatus,
+        progress
       }
     } catch (error) {
       console.error('Error getting execution status:', error)
@@ -208,7 +328,7 @@ export class SwapService {
   }
 
   /**
-   * Parse natural language to extract swap intent
+   * Parse natural language to extract swap intent (legacy method)
    */
   parseSwapIntent(text: string): SwapRequest | null {
     const lowerText = text.toLowerCase()
@@ -248,6 +368,89 @@ export class SwapService {
 
     console.log('❌ No swap intent found in text:', text)
     return null
+  }
+
+  /**
+   * Parse natural language to extract swap intent with enhanced parsing
+   */
+  async parseSwapIntentEnhanced(text: string): Promise<ParsedSwapIntent | null> {
+    return await intentParser.parseSwapIntent(text)
+  }
+
+  /**
+   * Convert ParsedSwapIntent to SwapRequest
+   */
+  async convertIntentToRequest(intent: ParsedSwapIntent): Promise<SwapRequest> {
+    if (!intent.isComplete) {
+      throw new Error('Cannot convert incomplete intent to request')
+    }
+
+    // Find the specific tokens based on chains
+    const fromTokens = await tokenDiscoveryService.getTokensBySymbol(intent.fromToken)
+    const toTokens = await tokenDiscoveryService.getTokensBySymbol(intent.toToken)
+    
+    const fromToken = fromTokens.find(t => t.blockchain === intent.fromChain)
+    const toToken = toTokens.find(t => t.blockchain === intent.toChain)
+    
+    if (!fromToken || !toToken) {
+      throw new Error('Could not find tokens for specified chains')
+    }
+
+    // Convert amount to smallest unit
+    const amountInSmallestUnit = intentParser.convertToSmallestUnit(intent.amount, intent.fromToken, fromToken.decimals)
+    console.log(`🔢 Amount conversion: ${intent.amount} ${intent.fromToken} (${fromToken.decimals} decimals) → ${amountInSmallestUnit}`)
+
+    const swapRequest = {
+      // Store additional metadata first
+      ...(intent as any),
+      // Then override with the converted values
+      fromToken: intent.fromToken,
+      toToken: intent.toToken,
+      amount: amountInSmallestUnit,
+      slippage: intent.slippage
+    }
+    
+    console.log(`🔢 Final swap request amount: ${swapRequest.amount}`)
+    console.log(`👛 Final swap request wallet: ${swapRequest.walletAddress || 'Not set'}`)
+    return swapRequest
+  }
+
+  /**
+   * Get asset ID for a specific token and chain
+   */
+  async getAssetIdForTokenAndChain(token: string, chain: string): Promise<string> {
+    const tokens = await tokenDiscoveryService.getTokensBySymbol(token)
+    console.log(`🔍 Found ${tokens.length} tokens for ${token}:`, tokens.map(t => `${t.symbol} on ${t.blockchain} (${t.assetId.substring(0, 30)}...)`))
+    
+    const tokenInfo = tokens.find(t => t.blockchain === chain)
+    
+    if (!tokenInfo) {
+      throw new Error(`Token ${token} not found on chain ${chain}`)
+    }
+    
+    console.log(`✅ Selected ${tokenInfo.symbol} on ${tokenInfo.blockchain}: ${tokenInfo.assetId}`)
+    return tokenInfo.assetId
+  }
+
+  /**
+   * Get available chains for a token
+   */
+  async getAvailableChainsForToken(token: string): Promise<string[]> {
+    return await tokenDiscoveryService.getAvailableChainsForToken(token)
+  }
+
+  /**
+   * Search for tokens
+   */
+  async searchTokens(query: string): Promise<TokenInfo[]> {
+    return await tokenDiscoveryService.searchTokens(query)
+  }
+
+  /**
+   * Get popular tokens
+   */
+  async getPopularTokens(limit: number = 10): Promise<TokenInfo[]> {
+    return await tokenDiscoveryService.getPopularTokens(limit)
   }
 
   /**
@@ -304,7 +507,7 @@ export class SwapService {
   }
 
   private getAddressForChain(chain: string): string {
-    const addresses = {
+    const addresses: { [key: string]: string } = {
       'ethereum': '0x2527D02599Ba641c19FEa793cD0F167589a0f10D',
       'arbitrum': '0x2527D02599Ba641c19FEa793cD0F167589a0f10D',
       'polygon': '0x2527D02599Ba641c19FEa793cD0F167589a0f10D',
