@@ -12,7 +12,7 @@ export default function Home() {
   const [currentWordIndex, setCurrentWordIndex] = useState(0)
   const [isTransitioning, setIsTransitioning] = useState(false)
   
-  const rotatingWords = ['crosschain', 'ai-powered', 'intent-based']
+  const rotatingWords = ['cross-chain', 'ai-powered', 'intent-based']
 
   useEffect(() => {
     const interval = setInterval(() => {

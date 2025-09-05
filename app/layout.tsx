@@ -11,6 +11,11 @@ export const metadata: Metadata = {
   keywords: ['blockchain', 'swap', 'chatbot', 'defi', 'web3', 'cryptocurrency'],
   authors: [{ name: 'Gaston Cartier' }],
   robots: 'index, follow',
+  icons: {
+    icon: '/inti-logo.png',
+    shortcut: '/inti-logo.png',
+    apple: '/inti-logo.png',
+  },
   openGraph: {
     title: 'Inti - Intent-Based Swap Chatbot',
     description: 'A modern, intelligent chatbot interface for cryptocurrency swaps with 1-click SDK integration.',

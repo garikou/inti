@@ -5,14 +5,13 @@ export function Footer() {
         <div className="grid md:grid-cols-4 gap-8">
           {/* Powered by */}
           <div className="md:col-span-2">
+          <p className="dark:text-slate-300 text-slate-600 mb-4 max-w-md">
+             Inti is your AI-powered cross-chain swap assistant.
+            </p>
             <div className="flex items-center space-x-3 mb-4">
               <span className="dark:text-slate-300 text-slate-600 text-sm">Powered by</span>
               <img src="/near-intents-logo.svg" alt="NEAR Intents" className="h-8" />
             </div>
-            <p className="dark:text-slate-300 text-slate-600 mb-4 max-w-md">
-              Experience the future of DeFi trading with our intelligent chatbot that understands your intent 
-              and executes swaps with just one click.
-            </p>
             <div className="flex space-x-4">
               <a href="#" className="dark:text-slate-300 text-slate-600 hover:text-neon-300 transition-colors">
                 <span className="sr-only">Twitter</span>

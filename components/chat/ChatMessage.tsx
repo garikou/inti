@@ -32,34 +32,61 @@ export function ChatMessage({ message, onButtonClick }: ChatMessageProps) {
     }
   }
 
-  // Function to format message content with markdown-style formatting and copy functionality
+  // Function to format message content with React components instead of dangerouslySetInnerHTML
   const formatMessageContent = (content: string) => {
-    // Replace **text** with bold styling and preserve line breaks
-    let formattedContent = content
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    // Find all addresses/hashes in the content
+    const addressMatch = content.match(/(0x[a-fA-F0-9]{40,})/g)
     
-          // Add copy functionality for deposit addresses and transaction hashes
-      const addressMatch = content.match(/(0x[a-fA-F0-9]{40,})/g)
-      if (addressMatch) {
-        addressMatch.forEach(address => {
-          formattedContent = formattedContent.replace(
-            new RegExp(`(${address})`, 'g'),
-                         `<div class="flex items-center w-full min-w-0">
-               <span class="break-all font-mono text-sm">$1</span>
-               <button onclick="navigator.clipboard.writeText('${address}')" class="inline-flex items-center justify-center ml-2 text-neon-300 hover:text-neon-200 transition-colors align-middle group flex-shrink-0">
-                 <svg class="w-4 h-4 group-hover:fill-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
-                 </svg>
-               </button>
-             </div>`
-          )
-        })
-      }
+    if (!addressMatch) {
+      // No addresses found, just format markdown
+      const formattedContent = content
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      
+      return (
+        <span dangerouslySetInnerHTML={{ __html: formattedContent }} />
+      )
+    }
     
-    return (
-      <span dangerouslySetInnerHTML={{ __html: formattedContent }} />
-    )
+    // Split content by addresses and create React elements
+    let parts: (string | JSX.Element)[] = [content]
+    addressMatch.forEach(address => {
+      parts = parts.flatMap(part => {
+        if (typeof part === 'string') {
+          const splitParts = part.split(address)
+          const result: (string | JSX.Element)[] = []
+          for (let i = 0; i < splitParts.length; i++) {
+            if (i > 0) {
+              result.push(
+                <div key={`${address}-${i}`} className="flex items-center w-full min-w-0">
+                  <span className="break-all font-mono text-sm">{address}</span>
+                  <button 
+                    onClick={() => copyToClipboard(address)}
+                    className="inline-flex items-center justify-center ml-2 text-neon-300 hover:text-neon-200 transition-colors align-middle group flex-shrink-0"
+                  >
+                    <svg className="w-4 h-4 group-hover:fill-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                    </svg>
+                  </button>
+                </div>
+              )
+            }
+            if (splitParts[i]) {
+              const formattedPart = splitParts[i]
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+              result.push(
+                <span key={`text-${i}`} dangerouslySetInnerHTML={{ __html: formattedPart }} />
+              )
+            }
+          }
+          return result
+        }
+        return [part]
+      })
+    })
+    
+    return <>{parts}</>
   }
   
   return (
